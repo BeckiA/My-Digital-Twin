@@ -32,7 +32,7 @@ load_dotenv(override=True)
 
 from context import TWIN_SYSTEM_PROMPT
 from helpers.pushover import push
-from styles import CSS, JS, EXAMPLES, HERO_HTML, FOOTER_HTML
+from styles import CSS, JS, EXAMPLES, TOP_HTML, HERO_HTML, FOOTER_HTML
 
 
 # -----------------------------------------------------------------------------
@@ -338,8 +338,9 @@ async def chat(message: str, history: list):
 # -----------------------------------------------------------------------------
 with gr.Blocks(
     title="Bereket Abera · Digital Twin",
-    fill_height=False,
+    fill_height=True,
 ) as demo:
+    gr.HTML(TOP_HTML)
     gr.HTML(HERO_HTML)
     gr.ChatInterface(
         chat,
@@ -347,7 +348,6 @@ with gr.Blocks(
         chatbot=gr.Chatbot(
             show_label=False,
             elem_classes=["twin-chat"],
-            height=160,
         ),
         textbox=gr.Textbox(
             placeholder="Message Bereket's twin…",
@@ -359,7 +359,7 @@ with gr.Blocks(
             elem_id="twin-message",
             submit_btn="Send",
         ),
-        fill_height=False,
+        fill_height=True,
     )
     gr.HTML(FOOTER_HTML)
 
@@ -368,11 +368,25 @@ if __name__ == "__main__":
     server_port = int(os.getenv("GRADIO_SERVER_PORT", "7860"))
     share = os.getenv("GRADIO_SHARE", "False").lower() in ("true", "1")
 
+    custom_theme = gr.themes.Base().set(
+        body_background_fill="#040046",
+        body_text_color="#C3C0FF",
+        background_fill_primary="#040046",
+        background_fill_secondary="transparent",
+        block_background_fill="transparent",
+        block_border_width="0px",
+        block_border_color="transparent",
+        block_shadow="none",
+        border_color_primary="transparent",
+        input_background_fill="transparent",
+        input_border_color="transparent",
+    )
+
     demo.launch(
         server_name=server_name,
         server_port=server_port,
         share=share,
-        theme=gr.themes.Base(),
+        theme=custom_theme,
         css=CSS,
         js=JS,
     )
