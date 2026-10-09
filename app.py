@@ -8,7 +8,16 @@ for recording user interest and unknown questions via Pushover.
 import os
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from agents import Agent, Runner, OpenAIChatCompletionsModel, function_tool
+from agents import (
+    Agent,
+    Runner,
+    OpenAIChatCompletionsModel,
+    function_tool,
+    input_guardrail,
+    GuardrailFunctionOutput,
+    InputGuardrailTripwireTriggered,
+    ItemHelpers,
+)
 import gradio as gr
 
 # Enable system certificate validation for Windows/corporate proxies
@@ -155,15 +164,96 @@ def record_unknown_question(question: str) -> str:
 
 
 # -----------------------------------------------------------------------------
-# Agent Definition
+# Guardrails & Agent Definition
 # -----------------------------------------------------------------------------
+GUARDRAIL_REFUSAL_MESSAGE = (
+    "I am designed to answer only about my career life, background, and skills, "
+    "not anything else. I am not designed for such cases."
+)
+
 model = get_model()
+
+# Classifier agent to strictly evaluate if a user query belongs to career scope
+scope_guardrail_evaluator = Agent(
+    name="career_scope_evaluator",
+    model=model,
+    instructions=(
+        "You are a strict guardrail classifier for a professional career Digital Twin.\n"
+        "Your role is to verify whether the user's message is strictly relevant to professional career topics.\n\n"
+        "ALLOWED:\n"
+        "- The person's professional career, work history, jobs, projects, technical skills, tech stack, education, portfolio.\n"
+        "- Inquiries about hiring, collaboration, getting in touch, and professional contact details.\n"
+        "- Standard professional greetings and introductions (e.g., hello, hi, who are you, what can you do).\n\n"
+        "BLOCKED:\n"
+        "- Personal life inquiries: dating, romance, marital status, family, children, private life, personal wealth/finances, personal hobbies, religious beliefs, lifestyle, medical information.\n"
+        "- Unrelated general topics: general trivia, homework, recipes, entertainment, sports, politics, creative writing unrelated to career.\n\n"
+        "Output ONLY one word: either 'ALLOWED' or 'BLOCKED'."
+    ),
+)
+
+
+def extract_latest_user_text(input_data) -> str:
+    """Extracts the latest user query text from the input payload."""
+    if isinstance(input_data, str):
+        return input_data
+    if isinstance(input_data, list):
+        for item in reversed(input_data):
+            if isinstance(item, dict) and item.get("role") == "user":
+                content = item.get("content", "")
+                if isinstance(content, str):
+                    return content
+                elif isinstance(content, list):
+                    return " ".join(
+                        part.get("text", "")
+                        for part in content
+                        if isinstance(part, dict) and "text" in part
+                    )
+            elif isinstance(item, str):
+                return item
+    return str(input_data)
+
+
+@input_guardrail(name="career_scope_guardrail", run_in_parallel=False)
+async def career_scope_guardrail(ctx, target_agent, input_data) -> GuardrailFunctionOutput:
+    """Enforces that the digital twin only discusses career and professional topics."""
+    user_text = extract_latest_user_text(input_data).strip()
+    if not user_text:
+        return GuardrailFunctionOutput(output_info="Empty message", tripwire_triggered=False)
+
+    # 1. Fast heuristic check for obvious personal life keywords
+    personal_keywords = [
+        "girlfriend", "boyfriend", "wife", "husband", "spouse", "married",
+        "dating", "relationship", "dating life", "love life", "personal life",
+        "kids", "children", "personal salary", "religion", "political view"
+    ]
+    lower_text = user_text.lower()
+    if any(kw in lower_text for kw in personal_keywords):
+        return GuardrailFunctionOutput(
+            output_info="Personal life question detected via keyword rule",
+            tripwire_triggered=True,
+        )
+
+    # 2. Contextual LLM evaluation for scope boundaries
+    try:
+        eval_result = await Runner.run(scope_guardrail_evaluator, user_text)
+        decision = eval_result.final_output.strip().upper()
+        is_blocked = "BLOCKED" in decision
+        return GuardrailFunctionOutput(
+            output_info=f"Classifier decision: {decision}",
+            tripwire_triggered=is_blocked,
+        )
+    except Exception as e:
+        print(f"[Guardrail] Scope evaluation note: {e}")
+        # Allow main agent (with prompt guardrails) to handle on evaluation error
+        return GuardrailFunctionOutput(output_info="Fallback on error", tripwire_triggered=False)
+
 
 agent = Agent(
     name="digi-twin",
     model=model,
     instructions=TWIN_SYSTEM_PROMPT,
     tools=[record_user_details, record_unknown_question],
+    input_guardrails=[career_scope_guardrail],
 )
 
 
@@ -185,11 +275,14 @@ def extract_text(content) -> str:
     return str(content) if content is not None else ""
 
 
-async def chat(message: str, history: list) -> str:
-    """Handles chat message interaction by delegating to the agent Runner."""
+async def chat(message: str, history: list):
+    """Handles chat message interaction via Runner.run_streamed() with streaming text response."""
+    # 1. Immediate visual feedback
+    yield "Avatar is typing ..."
+
     messages = []
 
-    # 1. Parse and sanitize conversation history from Gradio
+    # 2. Parse and sanitize conversation history from Gradio
     for turn in history:
         if isinstance(turn, dict):
             role = turn.get("role", "user")
@@ -204,14 +297,40 @@ async def chat(message: str, history: list) -> str:
             if assistant_text:
                 messages.append({"role": "assistant", "content": assistant_text})
 
-    # 2. Add current user message
+    # 3. Add current user message
     user_message_text = extract_text(message)
     if user_message_text:
         messages.append({"role": "user", "content": user_message_text})
 
-    # 3. Execute agent loop asynchronously
-    result = await Runner.run(agent, messages)
-    return result.final_output
+    response_text = ""
+    # 4. Execute agent loop with streaming and guardrail tripwire enforcement
+    try:
+        result = Runner.run_streamed(agent, messages)
+        async for event in result.stream_events():
+            if event.type == "raw_response_event" and hasattr(event, "data"):
+                delta = getattr(event.data, "delta", None)
+                if isinstance(delta, str) and delta:
+                    response_text += delta
+                    yield response_text
+            elif event.type == "run_item_stream_event" and hasattr(event, "item"):
+                raw_item = getattr(event.item, "raw_item", None)
+                if raw_item is not None:
+                    extracted = ItemHelpers.extract_text(raw_item)
+                    if extracted and extracted != response_text:
+                        response_text = extracted
+                        yield response_text
+
+        # Fallback if no deltas were streamed
+        if not response_text and hasattr(result, "final_output_as"):
+            final_out = result.final_output_as(str)
+            if final_out:
+                yield final_out
+
+    except InputGuardrailTripwireTriggered:
+        yield GUARDRAIL_REFUSAL_MESSAGE
+    except Exception as e:
+        print(f"[Digital Twin] Streaming error: {e}")
+        yield f"An error occurred: {e}"
 
 
 # -----------------------------------------------------------------------------
