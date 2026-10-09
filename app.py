@@ -11,12 +11,19 @@ from openai import AsyncOpenAI
 from agents import Agent, Runner, OpenAIChatCompletionsModel, function_tool
 import gradio as gr
 
-from context import TWIN_SYSTEM_PROMPT
-from helpers.pushover import push
-from styles import CSS, JS, EXAMPLES
+# Enable system certificate validation for Windows/corporate proxies
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
 
 # Load environment variables early
 load_dotenv(override=True)
+
+from context import TWIN_SYSTEM_PROMPT
+from helpers.pushover import push
+from styles import CSS, JS, EXAMPLES
 
 
 # -----------------------------------------------------------------------------
@@ -215,7 +222,7 @@ demo = gr.ChatInterface(
     examples=EXAMPLES,
     title="Digital Twin",
     description="Talk to my AI twin about my career",
-    chatbot=gr.Chatbot(type="messages", show_label=False),
+    chatbot=gr.Chatbot(show_label=False),
 )
 
 if __name__ == "__main__":

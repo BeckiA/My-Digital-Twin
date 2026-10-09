@@ -3,3 +3,6 @@ gradio
 pypdf
 openai
 python-dotenv
+openai-agents
+truststore
+

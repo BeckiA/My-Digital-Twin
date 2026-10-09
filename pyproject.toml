@@ -8,12 +8,13 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "agents>=1.4.0",
     "gradio>=6.29.1",
     "openai>=3.26.1",
+    "openai-agents>=0.23.1",
     "pypdf>=6.19.0",
     "python-dotenv>=1.2.4",
     "requests>=2.34.2",
+    "truststore>=0.10.0",
 ]
 
 [project.scripts]
@@ -22,3 +23,7 @@ digital-twin = "digital_twin:main"
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv]
+system-certs = true
+
