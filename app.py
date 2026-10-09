@@ -32,7 +32,7 @@ load_dotenv(override=True)
 
 from context import TWIN_SYSTEM_PROMPT
 from helpers.pushover import push
-from styles import CSS, JS, EXAMPLES
+from styles import CSS, JS, EXAMPLES, HERO_HTML, FOOTER_HTML
 
 
 # -----------------------------------------------------------------------------
@@ -336,13 +336,32 @@ async def chat(message: str, history: list):
 # -----------------------------------------------------------------------------
 # Gradio Application
 # -----------------------------------------------------------------------------
-demo = gr.ChatInterface(
-    chat,
-    examples=EXAMPLES,
-    title="Digital Twin",
-    description="Talk to my AI twin about my career",
-    chatbot=gr.Chatbot(show_label=False),
-)
+with gr.Blocks(
+    title="Bereket Abera · Digital Twin",
+    fill_height=False,
+) as demo:
+    gr.HTML(HERO_HTML)
+    gr.ChatInterface(
+        chat,
+        examples=EXAMPLES,
+        chatbot=gr.Chatbot(
+            show_label=False,
+            elem_classes=["twin-chat"],
+            height=160,
+        ),
+        textbox=gr.Textbox(
+            placeholder="Message Bereket's twin…",
+            show_label=False,
+            container=False,
+            lines=1,
+            max_lines=6,
+            elem_classes=["twin-input"],
+            elem_id="twin-message",
+            submit_btn="Send",
+        ),
+        fill_height=False,
+    )
+    gr.HTML(FOOTER_HTML)
 
 if __name__ == "__main__":
     server_name = os.getenv("GRADIO_SERVER_NAME", "127.0.0.1")
@@ -353,7 +372,7 @@ if __name__ == "__main__":
         server_name=server_name,
         server_port=server_port,
         share=share,
+        theme=gr.themes.Base(),
         css=CSS,
         js=JS,
-        theme=gr.themes.Base(),
     )
