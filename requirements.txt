@@ -1,8 +1,9 @@
-requests
-gradio
-pypdf
-openai
-python-dotenv
-openai-agents
-truststore
-
+fastapi>=0.115.0
+uvicorn>=0.30.0
+slowapi>=0.1.10
+openai>=1.50.0
+openai-agents>=0.23.0
+pypdf>=5.0.0
+python-dotenv>=1.0.0
+requests>=2.32.0
+truststore>=0.10.0

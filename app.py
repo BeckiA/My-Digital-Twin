@@ -153,7 +153,10 @@ def record_user_details(
 ) -> str:
     """Use this tool to record that a user is interested in being in touch and provided an email address."""
     push(f"Recording interest from {name} with email {email} and notes {notes}")
-    return "OK"
+    clean_name = name.strip() if name and name != "Name not provided" else ""
+    if clean_name:
+        return f"Recorded successfully. Reply to the user: Thank you, {clean_name}! I've successfully recorded your details. Bereket will be in touch with you soon!"
+    return "Recorded successfully. Reply to the user: Thank you! I've successfully recorded your details. Bereket will be in touch with you soon!"
 
 
 @function_tool
@@ -308,17 +311,21 @@ async def chat(message: str, history: list):
         result = Runner.run_streamed(agent, messages)
         async for event in result.stream_events():
             if event.type == "raw_response_event" and hasattr(event, "data"):
-                delta = getattr(event.data, "delta", None)
-                if isinstance(delta, str) and delta:
-                    response_text += delta
-                    yield response_text
-            elif event.type == "run_item_stream_event" and hasattr(event, "item"):
-                raw_item = getattr(event.item, "raw_item", None)
-                if raw_item is not None:
-                    extracted = ItemHelpers.extract_text(raw_item)
-                    if extracted and extracted != response_text:
-                        response_text = extracted
+                event_type = getattr(event.data, "type", "")
+                if event_type == "response.output_text.delta" or type(event.data).__name__ == "ResponseTextDeltaEvent":
+                    delta = getattr(event.data, "delta", None)
+                    if isinstance(delta, str) and delta:
+                        response_text += delta
                         yield response_text
+            elif event.type == "run_item_stream_event" and hasattr(event, "item"):
+                item = getattr(event, "item", None)
+                if item is not None and getattr(item, "type", "") == "message_output_item":
+                    raw_item = getattr(item, "raw_item", None)
+                    if raw_item is not None:
+                        extracted = ItemHelpers.extract_text(raw_item)
+                        if extracted and extracted != response_text:
+                            response_text = extracted
+                            yield response_text
 
         # Fallback if no deltas were streamed
         if not response_text and hasattr(result, "final_output_as"):
