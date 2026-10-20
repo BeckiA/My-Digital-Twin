@@ -16,7 +16,7 @@ from agents import (
     input_guardrail,
     GuardrailFunctionOutput,
     InputGuardrailTripwireTriggered,
-    ItemHelpers,
+        ItemHelpers,
 )
 import gradio as gr
 
@@ -326,7 +326,7 @@ async def chat(message: str, history: list):
                         if extracted and extracted != response_text:
                             response_text = extracted
                             yield response_text
-
+    
         # Fallback if no deltas were streamed
         if not response_text and hasattr(result, "final_output_as"):
             final_out = result.final_output_as(str)
